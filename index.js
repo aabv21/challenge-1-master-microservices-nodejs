@@ -17,13 +17,27 @@ dotenv.config();
 import "./config/mongo.js";
 import "./config/redis.js";
 
-// Rate Limiter
+// Rate Limiter with Debounce
+const debounceTime = 1000; // 1 second debounce
+let lastRequestTime = {};
+
+const debounce = (req, res, next) => {
+  const ip = req.ip;
+  const currentTime = Date.now();
+
+  if (lastRequestTime[ip] && currentTime - lastRequestTime[ip] < debounceTime) {
+    return res.error("Please wait before making another request", 429);
+  }
+
+  lastRequestTime[ip] = currentTime;
+  next();
+};
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 30, // Limit each IP to 30 requests per `window` (here, per 15 minutes).
-  standardHeaders: "draft-8", // draft-6: `RateLimit-*` headers; draft-7 & draft-8: combined `RateLimit` header
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
-  // store: ... , // Redis, Memcached, etc. See below.
+  limit: 30, // Limit each IP to 30 requests per `window`
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
 });
 
 // Express
@@ -35,6 +49,7 @@ app.use(responseHandler);
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cors());
+app.use(debounce); // Add debounce before rate limiter
 app.use(limiter);
 
 // Routes
